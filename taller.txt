@@ -1,0 +1,166 @@
+
+****pregunta1*****
+
+import org.apache.spark.sql.types._
+val customSchema = StructType(Array(
+ StructField("order_id", IntegerType, true),
+ StructField("order_date", DateType, true),
+ StructField("order_customer_id", IntegerType, true),
+ StructField("order_status", StringType, true))
+)
+
+val orders = spark.read.format("csv").option("inferSchema", "true").schema(customSchema).load("/public/retail_db/orders")
+
+orders.write.format("avro").save("/user/vagrant/lab1/pregunta1/resultado")
+
+val validate = spark.read.format("avro").load("/user/vagrant/lab1/pregunta1/resultado")
+
+validate.printSchema()
+validate.count()
+validate.show()
+
+
+*******pregunta2*******
+
+val customerSchema = StructType(Array(
+ StructField("customer_id", IntegerType, true),
+ StructField("customer_fname", StringType, true),
+ StructField("customer_lname", StringType, true),
+ StructField("customer_email", StringType, true),
+ StructField("customer_password", StringType, true),
+ StructField("customer_street", StringType, true),
+ StructField("customer_state", StringType, true),
+ StructField("customer_city", StringType, true),
+ StructField("customer_zipcode", StringType, true)
+ )
+)
+
+val customer = spark.read.format("csv").option("inferSchema", "true").schema(customerSchema).load("/public/retail_db/customers")
+
+customer.write.format("parquet").save("/user/vagrant/lab1/pregunta2/resultado")
+
+*****pregunta3****
+
+val orders_avro = spark.read.format("avro").load("/user/vagrant/lab1/pregunta1/resultado")
+
+orders_avro.select("order_id","order_status").write.option("compression", "gzip").parquet("/user/vagrant/lab1/pregunta3/resultado2")
+
+****** pregunta4 ****
+
+val customer = spark.read.format("parquet").load("/user/vagrant/lab1/pregunta2/resultado")
+
+customer.createOrReplaceTempView("customer")
+
+val orders_avro = spark.read.format("avro").load("/user/vagrant/lab1/pregunta1/resultado")
+
+orders_avro.createOrReplaceTempView("orders_avro")
+
+val result = spark.sql("select customer_id, customer_fname, customer_lname ,count(*) as cant from customer a inner join orders_avro b on a.customer_id = order_customer_id group by customer_id, customer_lname, customer_fname having count(*) > 5 ")
+
+result.sort(result.cant.desc()).write.format("json").save("/user/vagrant/lab1/pregunta4_python/resultado")
+
+
+******* pregunta 5********
+
+val ProductSchema = StructType(Array(
+ StructField("product_id", IntegerType, true),
+ StructField("product_category_id", IntegerType, true),
+ StructField("product_name", StringType, true),
+ StructField("product_description", StringType, true),
+ StructField("product_price", FloatType, true),
+ StructField("product_image", StringType, true)
+ )
+)
+
+val product = spark.read.format("csv").option("inferSchema", "true").schema(ProductSchema).load("/public/retail_db/products")
+product.createOrReplaceTempView("product")
+val result =spark.sql("select product_id, max(product_price) as max_price from product group by product_id")
+result.createOrReplaceTempView("result")
+val result2 =spark.sql("select concat(product_id, '|', max_price) as data from result ")
+
+result2.repartition(1).write.option("compression","gzip").format("text").save("/user/vagrant/lab1/pregunta5/resultado")
+
+****** pregunta6 *****
+
+val customer = spark.read.format("parquet").load("/user/vagrant/lab1/pregunta2/resultado")
+
+customer.createOrReplaceTempView("customer")
+
+val result = spark.sql("select customer_id, concat(substring(customer_fname,1,3),' ', customer_lname) as name , customer_street from customer")
+
+result.map(x => x.mkString("\t")).write.option("compression","bzip2").format("text").save("/user/vagrant/lab1/pregunta6/resultado")
+
+****** pregunta7 ***********
+
+val product = spark.read.format("csv").option("inferSchema", "true").schema(ProductSchema).load("/public/retail_db/products")
+
+product.write.format("hive").saveAsTable("product")
+
+****** pregunta8 ********
+
+val orders = spark.read.format("csv").option("inferSchema", "true").schema(customSchema).load("/public/retail_db/orders")
+
+orders.write.format("hive").saveAsTable("orders")
+
+val result = spark.sql("select count(*) as count,date_format(order_date,'YYYYMM') as month from orders group by date_format(order_date, 'YYYYMM')")
+
+result.write.option("compression","uncompressed").format("parquet").save("/user/vagrant/lab1/pregunta8/resultado")
+
+***** pregunta9 ******
+
+val itemsSchema = StructType(Array(
+ StructField("order_item_id", IntegerType, true),
+ StructField("order_item_order_id", IntegerType, true),
+ StructField("order_item_product_id", IntegerType, true),
+ StructField("order_item_quantity", IntegerType, true),
+ StructField("order_item_subtotal", FloatType, true),
+ StructField("order_item_productprice", FloatType, true)
+ )
+)
+
+val order_items= spark.read.format("csv").option("inferSchema", "true").schema(itemsSchema).load("/public/retail_db/order_items")
+
+order_items.write.format("orc").option("compression","uncompressed").save("/user/vagrant/lab1/pregunta9/resultado")
+
+
+***** pregunta 10 ******
+
+val customer = spark.read.format("parquet").load("/user/vagrant/lab1/pregunta2/resultado")
+
+customer.createOrReplaceTempView("customer")
+
+val order_items = spark.read.format("orc").load("/user/vagrant/lab1/pregunta9/resultado")
+
+order_items.createOrReplaceTempView("order_items")
+
+val top_customer = spark.sql("select customer_id, customer_fname, count(*) as cant, sum(order_item_subtotal) as total from customer a inner join orders b on a.customer_id = b.order_customer_id inner join order_items c on c.order_item_order_id = b.order_id where customer_city like 'M%' group by customer_id, customer_fname")
+
+top_customer.write.format("parquet").option("compression","gzip").save("/user/vagrant/lab1/pregunta10/resultado")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+customer.write.format("parquet").save("/user/vagrant/lab1/pregunta2/customer")
